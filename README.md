@@ -58,17 +58,7 @@ sudo apt-get update
 sudo apt-get install -y trivy
 ```
 
-### 4. Create the sandbox Docker network
-
-```bash
-docker network create \
-  --driver bridge \
-  --subnet 10.10.0.0/24 \
-  --gateway 10.10.0.1 \
-  sandlada
-```
-
-### 5. Build the monitor binary
+### 4. Build the monitor binary
 
 ```bash
 git clone https://github.com/gustavhammarin/container-monitor.git
@@ -76,7 +66,7 @@ cd container-monitor
 go build -o monitor ./cmd/monitor
 ```
 
-### 6. Run
+### 5. Run
 
 The binary must run as root (it binds to port 53 and modifies `/etc/resolv.conf`).
 

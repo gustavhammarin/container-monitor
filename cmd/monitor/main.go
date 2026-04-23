@@ -25,6 +25,15 @@ func sanitizeName(image string) string {
 	// alpine:latest → alpine-latest
 	return strings.NewReplacer(":", "-", "/", "-").Replace(image)
 }
+func setupNetwork() {
+	exec.Command("docker", "network", "create",
+		"--driver", "bridge",
+		"--subnet", "10.10.0.0/24",
+		"--gateway", "10.10.0.1",
+		"sandlada",
+	).Run()
+}
+
 func cleanup(dir string){
 	logs := []string{
 		filepath.Join(dir, "monitor.log"),
@@ -47,6 +56,7 @@ func main() {
 	if len(images) == 0 {
 		log.Fatal("Usage ./monitor <image> <image>")
 	}
+	setupNetwork()
 	log.Println("Setting real DNS")
 	setDNS("8.8.8.8")
 	falco.Run()
