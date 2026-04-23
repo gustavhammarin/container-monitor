@@ -1,7 +1,8 @@
 package dns
 
 import (
-	"fmt"
+	"container-monitor/internal/logger"
+	"log"
 	"net"
 
 	"github.com/miekg/dns"
@@ -26,6 +27,13 @@ func (s *Server) Start() error {
 		Addr: s.ListenAddr,
 		Net: "udp",
 	}
-	fmt.Printf("DNS is listening on %s\n", s.ListenAddr)
 	return server.ListenAndServe()
+}
+
+func Run(l *logger.Logger) {
+	handler := &Handler{Logger: l}
+		server := NewServer("0.0.0.0:53", "10.10.0.1", handler)
+		if err := server.Start(); err != nil {
+			log.Fatalf("dns: %v", err)
+		}
 }
