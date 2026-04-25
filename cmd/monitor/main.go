@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container-monitor/internal/api"
 	internaldns "container-monitor/internal/dns"
 	"container-monitor/internal/falco"
 	"container-monitor/internal/logger"
@@ -30,6 +31,7 @@ func setupNetwork() {
 		"--driver", "bridge",
 		"--subnet", "10.10.0.0/24",
 		"--gateway", "10.10.0.1",
+		"--internal",
 		"sandlada",
 	).Run()
 }
@@ -56,9 +58,6 @@ func main() {
 	if len(images) == 0 {
 		log.Fatal("Usage ./monitor <image> <image>")
 	}
-	setupNetwork()
-	log.Println("Setting real DNS")
-	setDNS("8.8.8.8")
 	falco.Run()
 
 	for _, image := range images {
@@ -71,6 +70,8 @@ func main() {
 		}
 	}
 
+	setupNetwork()
+
 	log.Println("Pulling trivyDB...")
 	cmd := exec.Command("trivy", "image", "--download-db-only")
 	cmd.Stdout = os.Stdout
@@ -79,22 +80,19 @@ func main() {
 		log.Fatalf("Failed to download DB... error: %v", err)
 	}
 
-	log.Println("Setting fake DNS")
-	setDNS("127.0.0.1")
-
-	l, err := logger.New("monitor.log")
+	l, err := logger.New()
 	if err != nil {
 		log.Fatalf("logger: %v", err)
 	}
 	defer l.Close()
 
-	trivylog, err := logger.New("trivy.log")
-	if err != nil {
-		log.Fatalf("trivylogger: %v", err)
-	}
-	defer trivylog.Close()
+	api := api.New(l)
 
-	trivyscanner := trivy.Scanner{Logger: trivylog}
+	if err := api.Start("0.0.0.0:8080"); err != nil {
+		log.Fatalf("api: %v", err)
+	}
+
+	trivyscanner := trivy.Scanner{Logger: l}
 
 	for _, image := range images {
 		log.Printf("Scanning %v with trivy", image)
@@ -123,7 +121,6 @@ func main() {
 		exec.Command("docker", "stop", sanitizeName(image)).Run()
 		exec.Command("docker", "rm", sanitizeName(image)).Run()
 	}
-	setDNS("8.8.8.8")
 	log.Println("Finished.")
 
 	log.Println("Turning off...")

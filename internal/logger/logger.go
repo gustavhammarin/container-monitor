@@ -3,7 +3,10 @@ package logger
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sync"
 )
 
@@ -42,22 +45,54 @@ type Vulnerability struct {
 }
 
 type Package struct {
-	Name    string   `json:"Name"`
-	Version string   `json:"Version"`
+	Name     string   `json:"Name"`
+	Version  string   `json:"Version"`
 	Licenses []string `json:"Licenses"`
 }
 
 type Logger struct {
-	mu   sync.Mutex
-	file *os.File
+	mu        sync.Mutex
+	file      *os.File
+	falcoFile *os.File
+	trivyFile *os.File
 }
 
-func New(path string) (*Logger, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+func New() (*Logger, error) {
+	f, err := os.OpenFile("monitor.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
-	return &Logger{file: f}, nil
+	t, err := os.OpenFile( "trivy.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &Logger{file: f, trivyFile: t}, nil
+}
+
+func (l *Logger) StartFalco() {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatalf("executable path: %v", err)
+	}
+
+	falcoLogPath := filepath.Join(filepath.Dir(exe), "falco.log")
+	os.WriteFile(falcoLogPath, []byte{}, 0644)
+
+	f, err := os.OpenFile(falcoLogPath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("falco log file: %v", err)
+	}
+
+	l.falcoFile = f
+
+	cmd := exec.Command("falco",
+		"json_output=true",
+		"-o", "file_output.enabled=true",
+		"-o", "file_output.filename="+falcoLogPath,
+	)
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("falco start: %v", err)
+	}
 }
 
 func (l *Logger) Write(e Entry) {
@@ -68,7 +103,7 @@ func (l *Logger) Write(e Entry) {
 	fmt.Fprintln(l.file, string(line))
 }
 
-func (l *Logger) TrivyWrite(e TrivyResult){
+func (l *Logger) TrivyWrite(e TrivyResult) {
 	line, _ := json.Marshal(e)
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -78,4 +113,41 @@ func (l *Logger) TrivyWrite(e TrivyResult){
 
 func (l *Logger) Close() {
 	l.file.Close()
+}
+
+func (l *Logger) GetTrivyLogs() ([]TrivyResult, error) {
+	data, err := os.ReadFile(l.file.Name())
+	if err != nil {
+		return nil, err
+	}
+	var result []TrivyResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (l *Logger) GetNetworkLogs() ([]Entry, error) {
+	data, err := os.ReadFile(l.file.Name())
+	if err != nil {
+		return nil, err
+	}
+	var result []Entry
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (l *Logger) GetFalcoLogs() (map[string]any, error) {
+	data, err := os.ReadFile(l.falcoFile.Name())
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
