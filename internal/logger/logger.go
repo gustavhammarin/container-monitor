@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -115,39 +116,33 @@ func (l *Logger) Close() {
 	l.file.Close()
 }
 
-func (l *Logger) GetTrivyLogs() ([]TrivyResult, error) {
-	data, err := os.ReadFile(l.file.Name())
+func ReadNDJSON[T any](filename string) ([]T, error){
+	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
-	var result []TrivyResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
+	defer f.Close()
+
+	var result []T
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan(){
+		var e T
+		if err := json.Unmarshal(scanner.Bytes(), &e); err == nil {
+			result = append(result, e)
+		}
 	}
-	return result, nil
+	return result, scanner.Err()
+}
+
+func (l *Logger) GetTrivyLogs() ([]TrivyResult, error) {
+	return ReadNDJSON[TrivyResult](l.trivyFile.Name())
 }
 
 func (l *Logger) GetNetworkLogs() ([]Entry, error) {
-	data, err := os.ReadFile(l.file.Name())
-	if err != nil {
-		return nil, err
-	}
-	var result []Entry
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+	return ReadNDJSON[Entry](l.file.Name())
 }
 
-func (l *Logger) GetFalcoLogs() (map[string]any, error) {
-	data, err := os.ReadFile(l.falcoFile.Name())
-	if err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
-	}
-
-	return result, nil
+func (l *Logger) GetFalcoLogs() ([]map[string]any, error) {
+	return ReadNDJSON[map[string]any](l.falcoFile.Name())
 }
+
