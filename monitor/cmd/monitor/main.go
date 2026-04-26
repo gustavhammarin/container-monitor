@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -113,17 +114,24 @@ func main() {
 
 	trivyscanner := trivy.Scanner{Logger: l}
 
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		api.State.Update()
-	}()
-
+	var wg sync.WaitGroup
 	for _, image := range images {
+		wg.Add(1)
+		image := image
 		log.Printf("Scanning %v with trivy", image)
-		go trivyscanner.Scan(image)
+		go func() {
+			defer wg.Done()
+			trivyscanner.Scan(image)
+		}()
 	}
+
+	go func() {
+		wg.Wait()
+		log.Println("Trivy done, waiting 1 minute for DNS/proxy/falco...")
+		time.Sleep(1 * time.Minute)
+		api.State.Update()
+		log.Println("Status = finished")
+	}()
 
 	for _, image := range images {
 		name := sanitizeName(image)
