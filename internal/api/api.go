@@ -8,10 +8,11 @@ import (
 
 type API struct{
 	log *logger.Logger
+	State *PollState
 }
 
 func New(l *logger.Logger) *API {
-	return &API{log: l}
+	return &API{log: l, State: Init()}
 }
 
 func (a *API) Start(addr string) error {
@@ -19,9 +20,13 @@ func (a *API) Start(addr string) error {
 	mux.HandleFunc("GET /logs/network", a.networkLogs)
 	mux.HandleFunc("GET /logs/trivy", a.trivyLogs)
 	mux.HandleFunc("GET /logs/falco", a.falcoLogs)
+	mux.HandleFunc("GET /status", a.getStatus)
 	return http.ListenAndServe(addr, mux)
 }
 
+func (a *API) getStatus(w http.ResponseWriter, r *http.Request) {
+	json.NewEncoder(w).Encode(a.State)
+}
 
 func (a *API) networkLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := a.log.GetNetworkLogs()

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func setDNS(nameserver string) {
@@ -36,13 +37,13 @@ func setupNetwork() {
 	).Run()
 }
 
-func cleanup(dir string){
+func cleanup(dir string) {
 	logs := []string{
 		filepath.Join(dir, "monitor.log"),
 		filepath.Join(dir, "falco.log"),
 		filepath.Join(dir, "trivy.log"),
 	}
-	for _, log := range logs{
+	for _, log := range logs {
 		os.Remove(log)
 	}
 }
@@ -88,11 +89,20 @@ func main() {
 
 	api := api.New(l)
 
-	if err := api.Start("0.0.0.0:8080"); err != nil {
-		log.Fatalf("api: %v", err)
-	}
+	go func() {
+		if err := api.Start("0.0.0.0:8080"); err != nil {
+			log.Fatalf("api: %v", err)
+		}
+	}()
 
 	trivyscanner := trivy.Scanner{Logger: l}
+
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+
+		api.State.Update()
+	}()
 
 	for _, image := range images {
 		log.Printf("Scanning %v with trivy", image)
