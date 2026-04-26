@@ -3,7 +3,6 @@ package main
 import (
 	"container-monitor/internal/api"
 	internaldns "container-monitor/internal/dns"
-	"container-monitor/internal/falco"
 	"container-monitor/internal/logger"
 	"container-monitor/internal/proxy"
 	"container-monitor/internal/trivy"
@@ -35,6 +34,12 @@ func setupNetwork() {
 		"--internal",
 		"sandlada",
 	).Run()
+
+	exec.Command("iptables", "-t", "nat", "-A", "PREROUTING",
+		"-s", "10.10.0.0/24",
+		"-p", "tcp", "--dport", "80",
+		"-j", "REDIRECT", "--to-port", "8080",
+	).Run()
 }
 
 func cleanup(dir string) {
@@ -46,6 +51,12 @@ func cleanup(dir string) {
 	for _, log := range logs {
 		os.Remove(log)
 	}
+
+	exec.Command("iptables", "-t", "nat", "-D", "PREROUTING",
+		"-s", "10.10.0.0/24",
+		"-p", "tcp", "--dport", "80",
+		"-j", "REDIRECT", "--to-port", "8080",
+	).Run()
 }
 
 func main() {
@@ -59,15 +70,19 @@ func main() {
 	if len(images) == 0 {
 		log.Fatal("Usage ./monitor <image> <image>")
 	}
-	falco.Run()
 
 	for _, image := range images {
-		log.Printf("Pulls image: %s", image)
-		cmd := exec.Command("docker", "pull", image)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("docker pull %s: %v", image, err)
+		err := exec.Command("docker", "inspect", image).Run()
+		if err != nil {
+			log.Printf("Pulls image: %s", image)
+			cmd := exec.Command("docker", "pull", image)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				log.Fatalf("docker pull %s: %v", image, err)
+			}
+		} else {
+			log.Printf("Using local image: %s", image)
 		}
 	}
 
@@ -86,11 +101,12 @@ func main() {
 		log.Fatalf("logger: %v", err)
 	}
 	defer l.Close()
+	l.StartFalco()
 
 	api := api.New(l)
 
 	go func() {
-		if err := api.Start("0.0.0.0:8080"); err != nil {
+		if err := api.Start("0.0.0.0:8081"); err != nil {
 			log.Fatalf("api: %v", err)
 		}
 	}()
@@ -98,7 +114,7 @@ func main() {
 	trivyscanner := trivy.Scanner{Logger: l}
 
 	go func() {
-		ticker := time.NewTicker(2 * time.Minute)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
 		api.State.Update()

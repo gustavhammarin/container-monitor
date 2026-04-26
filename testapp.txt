@@ -1,0 +1,36 @@
+mkdir /tmp/testapp
+
+cat > /tmp/testapp/run.sh << 'EOF'
+#!/bin/bash
+while true; do
+    curl -s http://example.com > /dev/null
+    nslookup github.com
+    cat /etc/shadow 2>/dev/null
+    cat /etc/passwd
+    sleep 10
+done
+EOF
+
+cat > /tmp/testapp/Dockerfile << 'EOF'
+FROM ubuntu:18.04
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    dnsutils \
+    netcat \
+    openssl \
+    libssl1.0.0 \
+    python2.7 \
+    libpython2.7 \
+    wget \
+    libcurl4 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY run.sh /tmp/testapp/run.sh
+RUN chmod +x /tmp/testapp/run.sh
+
+CMD ["/tmp/testapp/run.sh"]
+EOF
+
+docker build -t testapp /tmp/testapp
+sudo ./monitor testapp

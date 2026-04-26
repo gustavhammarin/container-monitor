@@ -14,16 +14,13 @@ type Scanner struct {
 func (s *Scanner) Scan(image string) {
 	log.Printf("Trivy scanning: %v", image)
 
-	cmd := exec.Command("trivy", "image", "--format", "json", "--quiet", image)
-
-	out, err := cmd.Output()
+	out, err := exec.Command("trivy", "image", "--format", "json", "--quiet", image).Output()
 	if err != nil {
 		log.Printf("trivy error: %v", err)
 		return
 	}
 
 	var result logger.TrivyResult
-	
 	if err := json.Unmarshal(out, &result); err != nil {
 		log.Printf("trivy parse error: %v", err)
 		return

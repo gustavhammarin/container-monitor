@@ -33,7 +33,7 @@ type TrivyResult struct {
 	} `json:"Metadata"`
 	Results []struct {
 		Target          string          `json:"Target"`
-		Vulnerabilities []Vulnerability `json:"Vulnerabilities"` // nil om inga CVEs
+		Vulnerabilities []Vulnerability `json:"Vulnerabilities"`
 		Packages        []Package       `json:"Packages"`
 	} `json:"Results"`
 }
@@ -59,37 +59,32 @@ type Logger struct {
 }
 
 func New() (*Logger, error) {
-	f, err := os.OpenFile("monitor.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	t, err := os.OpenFile( "trivy.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	dir := filepath.Dir(exe)
+
+	f, err := os.OpenFile(filepath.Join(dir, "monitor.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
-	return &Logger{file: f, trivyFile: t}, nil
+	t, err := os.OpenFile(filepath.Join(dir, "trivy.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	fa, err := os.OpenFile(filepath.Join(dir, "falco.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	return &Logger{file: f, trivyFile: t, falcoFile: fa}, nil
 }
 
 func (l *Logger) StartFalco() {
-	exe, err := os.Executable()
-	if err != nil {
-		log.Fatalf("executable path: %v", err)
-	}
-
-	falcoLogPath := filepath.Join(filepath.Dir(exe), "falco.log")
-	os.WriteFile(falcoLogPath, []byte{}, 0644)
-
-	f, err := os.OpenFile(falcoLogPath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("falco log file: %v", err)
-	}
-
-	l.falcoFile = f
-
 	cmd := exec.Command("falco",
-		"json_output=true",
+		"-o", "json_output=true",
 		"-o", "file_output.enabled=true",
-		"-o", "file_output.filename="+falcoLogPath,
+		"-o", "file_output.filename="+l.falcoFile.Name(),
 	)
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("falco start: %v", err)
@@ -109,7 +104,7 @@ func (l *Logger) TrivyWrite(e TrivyResult) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	fmt.Println(string(line))
-	fmt.Fprintln(l.file, string(line))
+	fmt.Fprintln(l.trivyFile, string(line))
 }
 
 func (l *Logger) Close() {
@@ -125,6 +120,7 @@ func ReadNDJSON[T any](filename string) ([]T, error){
 
 	var result []T
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 10*1024*1024), 10*1024*1024)
 	for scanner.Scan(){
 		var e T
 		if err := json.Unmarshal(scanner.Bytes(), &e); err == nil {

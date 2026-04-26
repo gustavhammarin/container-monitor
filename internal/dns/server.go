@@ -32,7 +32,7 @@ func (s *Server) Start() error {
 
 func Run(l *logger.Logger) {
 	handler := &Handler{Logger: l}
-		server := NewServer("0.0.0.0:53", "10.10.0.1", handler)
+		server := NewServer("10.10.0.1:53", "10.10.0.1", handler)
 		if err := server.Start(); err != nil {
 			log.Fatalf("dns: %v", err)
 		}
